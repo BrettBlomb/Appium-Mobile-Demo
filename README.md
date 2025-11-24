@@ -1,3 +1,7 @@
+## 🚀 Mobile Tests Status
+
+![Mobile Tests](https://github.com/USERNAME/Appium-Mobile-Demo/actions/workflows/mobile-tests.yml/badge.svg)
+
 ## 📱 Mobile Web Automation (Appium + Android Emulator)
 
 This project includes automated mobile browser testing using **Appium v3**, **Python**, and **Android Emulator**.
