@@ -1,0 +1,4 @@
+pytest
+appium-python-client
+selenium
+webdriver-manager
