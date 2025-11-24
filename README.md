@@ -4,7 +4,7 @@ This project includes automated mobile browser testing using **Appium v3**, **Py
 
 ---
 
-### 🔧 Requirements
+## 🔧 Requirements
 
 - Node.js 18+
 - Python 3.11+
@@ -15,9 +15,10 @@ This project includes automated mobile browser testing using **Appium v3**, **Py
 
 ---
 
-### 📦 Installation
+## 📦 Installation
 
-#### Install Appium
+### Install Appium
+
 ```bash
 npm install -g appium@latest
 Install Drivers
@@ -25,10 +26,10 @@ bash
 Copy code
 appium driver install uiautomator2
 appium driver install chromedriver
-⚠ Appium v3 no longer auto-downloads Chromedrivers using capabilities.
+⚠ Important: Appium v3 no longer auto-downloads Chromedrivers using capabilities.
 You must install the Chromedriver plugin (above) or manually supply Chromedriver 109.
 
-🧩 Chrome 109 Driver (Emulator Default)
+💡 Chrome 109 Driver (Emulator Default)
 Most Android emulators still ship with Chrome 109, so you must use Chromedriver 109.
 
 Download Chromedriver 109:
@@ -51,7 +52,7 @@ Run mobile tests:
 bash
 Copy code
 pytest -k mobile
-✔ Example Test
+✔ Example Mobile Test
 python
 Copy code
 from appium import webdriver
