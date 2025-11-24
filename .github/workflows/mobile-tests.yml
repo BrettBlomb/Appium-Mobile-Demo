@@ -2,7 +2,7 @@ name: Mobile Tests (Appium)
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main ]
   pull_request:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      PATH: /usr/local/lib/android/sdk/emulator:/usr/local/lib/android/sdk/platform-tools:/usr/local/lib/android/sdk/cmdline-tools/3.0/bin:${PATH}
+      PATH: /usr/local/lib/android/sdk/emulator:/usr/local/lib/android/sdk/platform-tools:/usr/local/lib/android/sdk/cmdline-tools/latest/bin:/usr/local/bin:/usr/bin:/bin
 
     steps:
     - name: Checkout repository
@@ -23,62 +23,49 @@ jobs:
       with:
         node-version: 20
 
-    - name: Install Appium 3 + Drivers
+    - name: Install Appium + Drivers
       run: |
         npm install -g appium@latest
         appium driver install uiautomator2
         appium driver install chromium
 
-    - name: Setup Python 3.11
+    - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
-    - name: Install Python dependencies
+    - name: Install Python Dependencies
       run: |
         pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Install Android SDK components (API 30 default)
+    - name: Accept Android SDK licenses and install packages
       run: |
-        yes | sdkmanager --licenses || true
+        echo "y" | sdkmanager --licenses || true
         sdkmanager "platform-tools" \
-                   "platforms;android-30" \
-                   "system-images;android-30;default;x86_64"
+                   "platforms;android-33" \
+                   "system-images;android-33;google_apis;x86_64"
 
-    - name: Remove old emulators
-      run: rm -rf $ANDROID_HOME/avd/*
-
-    - name: Create Android emulator (API 30)
+    - name: Create and Start Android Emulator
       run: |
-        echo "no" | avdmanager create avd -n ci \
-          -k "system-images;android-30;default;x86_64" \
-          --device "pixel" --force
-
-    - name: Start emulator (Non-accelerated stable mode)
-      run: |
-        emulator -avd ci \
-          -no-window \
-          -no-audio \
-          -no-snapshot \
-          -no-boot-anim \
-          -gpu swiftshader_indirect &
+        avdmanager create avd -n test_emulator \
+          -k "system-images;android-33;google_apis;x86_64" \
+          --device "pixel_5" --force
+        emulator -avd test_emulator -no-audio -no-window -no-boot-anim &
+        # Wait for emulator to boot
         adb wait-for-device
+        adb shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done;'
 
-        echo "⏳ Waiting for emulator boot..."
-        adb shell 'while [[ $(getprop sys.boot_completed) != "1" ]]; do sleep 3; done'
-        echo "🎉 Emulator booted!"
-
-    - name: Disable animations (improves stability)
+    - name: Disable animations (stability)
       run: |
         adb shell settings put global window_animation_scale 0
         adb shell settings put global transition_animation_scale 0
         adb shell settings put global animator_duration_scale 0
 
-    - name: Start Appium server
+    - name: Start Appium Server
       run: |
         appium --base-path /wd/hub &
         sleep 10
 
-    - name: Run mobile tests
+    - name: Run Appium Mobile Tests
       run: pytest -k mobile
