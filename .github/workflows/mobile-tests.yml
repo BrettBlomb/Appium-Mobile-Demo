@@ -22,7 +22,7 @@ jobs:
       run: |
         npm install -g appium@latest
         appium driver install uiautomator2
-        appium driver install chromedriver
+        appium driver install chromium
 
     - name: Setup Python
       uses: actions/setup-python@v5
