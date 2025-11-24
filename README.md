@@ -1,6 +1,6 @@
 ## 🚀 Mobile Tests Status
 
-![Mobile Tests](https://github.com/USERNAME/Appium-Mobile-Demo/actions/workflows/mobile-tests.yml/badge.svg)
+![Mobile Tests](https://github.com/BrettBlomb/Appium-Mobile-Demo/actions/workflows/mobile-tests.yml/badge.svg)
 
 ## 📱 Mobile Web Automation (Appium + Android Emulator)
 
