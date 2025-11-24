@@ -21,3 +21,9 @@ This project includes automated mobile browser testing using **Appium v3**, **Py
 
 ```bash
 npm install -g appium@latest
+```
+Install Drivers
+```bash
+appium driver install uiautomator2
+appium driver install chromedriver
+```
