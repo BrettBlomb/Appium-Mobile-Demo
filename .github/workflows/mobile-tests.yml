@@ -1,4 +1,4 @@
-name: Mobile Tests (Appium)
+name: Mobile Tests (Appium via Firebase Test Lab)
 
 on:
   push:
@@ -6,90 +6,56 @@ on:
   pull_request:
 
 jobs:
-  android-tests:
+  appium-ftl:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-
-    - name: Install Appium + Drivers
-      run: |
-        npm install -g appium@latest
-        appium driver install uiautomator2
-        appium driver install chromium
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
-    - name: Install python deps
+    - name: Install gcloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Download Firebase Appium test wrapper APK
       run: |
+        wget https://storage.googleapis.com/firebase-preview-drop/appium/appium-wrapper.apk -O appium-wrapper.apk
+
+    - name: Create Appium test bundle
+      run: |
+        mkdir -p appium-tests
+        cp -R tests/ appium-tests/tests
+        cp requirements.txt appium-tests/requirements.txt
+
+        cat << 'EOF' > appium-tests/run.sh
+        #!/bin/bash
         pip install -r requirements.txt
+        pytest -k mobile --disable-warnings -q
+        EOF
 
-    - name: Install Android SDK
+        chmod +x appium-tests/run.sh
+        zip -r appium-tests.zip appium-tests
+
+    - name: Run Appium tests in Firebase Test Lab
       run: |
-        sudo apt-get update
-        sudo apt-get install -y wget unzip
+        gcloud firebase test android run \
+          --type=appium \
+          --app=appium-wrapper.apk \
+          --test=appium-tests.zip \
+          --device model=Pixel2,version=30,locale=en,orientation=portrait \
+          --timeout 10m \
+          --results-dir=appium_ftl_results
 
-        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdtools.zip
-        mkdir -p $HOME/android-sdk
-        unzip cmdtools.zip -d $HOME/android-sdk/cmdline-tools
-        mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
-
-        echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-        echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-        echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
-        echo "$HOME/android-sdk/emulator" >> $GITHUB_PATH
-
-    - name: Accept Android licenses
-      run: yes | sdkmanager --licenses
-
-    - name: Install Android System Image (x86_64)
-      run: |
-        sdkmanager "platform-tools" \
-                   "platforms;android-30" \
-                   "system-images;android-30;google_apis;x86_64" \
-                   "emulator"
-
-    - name: Create AVD
-      run: |
-        echo "no" | avdmanager create avd \
-          -n ci \
-          --abi x86_64 \
-          -k "system-images;android-30;google_apis;x86_64" \
-          --device "pixel"
-
-    - name: Boot emulator
-      timeout-minutes: 10
-      run: |
-        emulator -avd ci -no-window -no-audio -gpu swiftshader_indirect &
-
-        echo "Waiting for device..."
-        adb wait-for-device
-
-        until adb shell getprop sys.boot_completed | grep -m 1 "1"; do
-          echo "Booting..."
-          sleep 5
-        done
-
-        echo "Emulator booted!"
-
-    - name: Disable animations
-      run: |
-        adb shell settings put global window_animation_scale 0
-        adb shell settings put global transition_animation_scale 0
-        adb shell settings put global animator_duration_scale 0
-
-    - name: Start Appium
-      run: |
-        appium --base-path /wd/hub &
-        sleep 10
-
-    - name: Run Appium tests
-      run: pytest -k mobile
+    - name: Upload Test Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: firebase-test-results
+        path: appium_ftl_results
