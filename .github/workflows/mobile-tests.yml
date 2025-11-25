@@ -1,4 +1,4 @@
-name: Mobile Tests (Base Check)
+name: Mobile Tests (Appium)
 
 on:
   push:
@@ -6,20 +6,74 @@ on:
   pull_request:
 
 jobs:
-  sanity-check:
+  appium-mobile-tests:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Verify runner environment
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Install Appium and Drivers
       run: |
-        echo "OS Info:"
-        uname -a
-        echo ""
-        echo "Tar location:"
-        which tar
-        echo ""
-        echo "Tar version:"
-        tar --version
+        npm install -g appium@latest
+        appium driver install uiautomator2
+        appium driver install chromium
+
+    - name: Setup Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Accept Android SDK Licenses
+      run: yes | sdkmanager --licenses
+
+    - name: Install Android SDK Packages
+      run: |
+        sdkmanager "platform-tools" \
+                   "platforms;android-30" \
+                   "system-images;android-30;default;x86_64"
+
+    - name: Create Emulator
+      run: |
+        echo "no" | avdmanager create avd -n ci \
+          -k "system-images;android-30;default;x86_64" \
+          --device "pixel" --force
+
+    - name: Start Emulator
+      run: |
+        emulator -avd ci \
+          -no-window \
+          -no-audio \
+          -no-boot-anim \
+          -no-snapshot \
+          -gpu swiftshader_indirect &
+
+        adb wait-for-device
+
+        echo "Waiting for emulator to boot..."
+        adb shell 'while [[ $(getprop sys.boot_completed) != "1" ]]; do sleep 2; done'
+        echo "Emulator booted!"
+
+    - name: Disable animations
+      run: |
+        adb shell settings put global window_animation_scale 0
+        adb shell settings put global transition_animation_scale 0
+        adb shell settings put global animator_duration_scale 0
+
+    - name: Start Appium
+      run: |
+        appium --base-path /wd/hub &
+        sleep 10
+
+    - name: Run Appium Tests
+      run: pytest -k mobile
