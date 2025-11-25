@@ -41,27 +41,27 @@ jobs:
     - name: Find sdkmanager
       id: find_sdk
       run: |
-        echo "Searching for sdkmanager..."
         SDKMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "sdkmanager" | head -n 1)
         if [ -z "$SDKMANAGER_PATH" ]; then
           echo "❌ sdkmanager not found"
           exit 1
         fi
         echo "SDKMANAGER=$SDKMANAGER_PATH" >> $GITHUB_ENV
+        echo "sdkmanager found at $SDKMANAGER_PATH"
 
     - name: Find avdmanager
       id: find_avd
       run: |
-        echo "Searching for avdmanager..."
         AVDMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "avdmanager" | head -n 1)
         if [ -z "$AVDMANAGER_PATH" ]; then
           echo "❌ avdmanager not found"
           exit 1
         fi
         echo "AVDMANAGER=$AVDMANAGER_PATH" >> $GITHUB_ENV
+        echo "avdmanager found at $AVDMANAGER_PATH"
 
     #######################################################################
-    #                 ADD ANDROID TOOLS TO PATH (KEY FIX)
+    #                 ADD ANDROID TOOLS TO PATH (CRITICAL)
     #######################################################################
 
     - name: Add Android tools to PATH
@@ -72,7 +72,7 @@ jobs:
         echo "/usr/local/lib/android/sdk/cmdline-tools/bin" >> $GITHUB_PATH
 
     #######################################################################
-    #            INSTALL ANDROID SDK COMPONENTS (API 30)
+    #        INSTALL ANDROID SDK COMPONENTS (Google APIs Image)
     #######################################################################
 
     - name: Accept Android SDK licenses
@@ -82,7 +82,7 @@ jobs:
       run: |
         "$SDKMANAGER" "platform-tools" \
                       "platforms;android-30" \
-                      "system-images;android-30;default;x86_64"
+                      "system-images;android-30;google_apis;x86_64"
 
     #######################################################################
     #                         CREATE EMULATOR
@@ -94,30 +94,49 @@ jobs:
     - name: Create Android Emulator
       run: |
         echo "no" | "$AVDMANAGER" create avd -n ci \
-          -k "system-images;android-30;default;x86_64" \
-          --device "pixel" --force
+          -k "system-images;android-30;google_apis;x86_64" \
+          --device "pixel_5" --force
+
+        # Patch AVD config for reliability
+        echo "hw.gpu.mode=swiftshader_indirect" >> ~/.android/avd/ci.avd/config.ini
+        echo "hw.gpu.enabled=yes" >> ~/.android/avd/ci.avd/config.ini
+        echo "hw.ramSize=2048" >> ~/.android/avd/ci.avd/config.ini
+        echo "skin.dynamic=yes" >> ~/.android/avd/ci.avd/config.ini
 
     #######################################################################
-    #                          START EMULATOR
+    #                           START EMULATOR
     #######################################################################
 
     - name: Start Emulator
       run: |
         emulator -avd ci \
           -no-window \
-          -no-snapshot \
           -no-audio \
+          -no-snapshot \
           -no-boot-anim \
           -gpu swiftshader_indirect &
 
+        echo "Waiting for device..."
         adb wait-for-device
 
         echo "Waiting for boot..."
-        adb shell 'while [[ $(getprop sys.boot_completed) != "1" ]]; do sleep 2; done'
-        echo "Emulator booted!"
+        for i in {1..60}; do
+          if adb shell getprop sys.boot_completed | grep -q "1"; then
+            echo "🎉 Boot complete!"
+            break
+          fi
+          echo "⏳ Booting... ($i/60)"
+          sleep 5
+        done
+
+        # fail if not booted
+        adb shell getprop sys.boot_completed | grep -q "1" || {
+          echo "❌ Emulator failed to boot!"
+          exit 1
+        }
 
     #######################################################################
-    #                           DISABLE ANIMATIONS
+    #                        DISABLE ANIMATIONS
     #######################################################################
 
     - name: Disable animations
@@ -127,7 +146,7 @@ jobs:
         adb shell settings put global animator_duration_scale 0
 
     #######################################################################
-    #                          START APPIUM
+    #                         START APPIUM SERVER
     #######################################################################
 
     - name: Start Appium Server
@@ -136,7 +155,7 @@ jobs:
         sleep 10
 
     #######################################################################
-    #                        RUN MOBILE TESTS
+    #                          RUN TESTS
     #######################################################################
 
     - name: Run Mobile Tests
