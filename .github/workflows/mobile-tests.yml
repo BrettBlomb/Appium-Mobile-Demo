@@ -7,7 +7,7 @@ on:
 
 jobs:
   android-tests:
-    runs-on: macos-latest   # ← CRITICAL FIX: Use macOS, not Linux
+    runs-on: macos-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -32,34 +32,46 @@ jobs:
       run: |
         pip install -r requirements.txt
 
-    # -----------------------------------------------------
-    #    STABLE EMULATOR ON GITHUB — USES macOS RUNNER
-    # -----------------------------------------------------
-    - name: Install AVD
+    - name: Accept Android SDK Licenses
       run: |
-        sudo $ANDROID_HOME/tools/bin/sdkmanager "system-images;android-30;google_apis;x86_64"
-        sudo $ANDROID_HOME/tools/bin/sdkmanager --licenses <<< "y"
-        echo "no" | $ANDROID_HOME/tools/bin/avdmanager create avd \
-            -n ci -k "system-images;android-30;google_apis;x86_64" \
-            --abi x86_64 --device "pixel"
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+
+    - name: Install Android system image (API 30)
+      run: |
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-30" \
+            "system-images;android-30;google_apis;x86_64"
+
+    - name: Create AVD
+      run: |
+        echo "no" | $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd \
+            -n ci \
+            --abi x86_64 \
+            -k "system-images;android-30;google_apis;x86_64" \
+            --device "pixel"
 
     - name: Boot emulator
       run: |
-        $ANDROID_HOME/emulator/emulator -avd ci -no-window -no-snapshot -gpu swiftshader_indirect &
+        $ANDROID_HOME/emulator/emulator \
+          -avd ci \
+          -no-window \
+          -gpu swiftshader_indirect &
 
         echo "Waiting for device..."
         $ANDROID_HOME/platform-tools/adb wait-for-device
 
-        echo "Waiting for boot complete..."
+        echo "Waiting for boot..."
         until [[ "$($ANDROID_HOME/platform-tools/adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]; do
           sleep 2
         done
+        echo "Emulator booted!"
 
     - name: Disable animations
       run: |
-        adb shell settings put global window_animation_scale 0
-        adb shell settings put global transition_animation_scale 0
-        adb shell settings put global animator_duration_scale 0
+        $ANDROID_HOME/platform-tools/adb shell settings put global window_animation_scale 0
+        $ANDROID_HOME/platform-tools/adb shell settings put global transition_animation_scale 0
+        $ANDROID_HOME/platform-tools/adb shell settings put global animator_duration_scale 0
 
     - name: Start Appium
       run: |
