@@ -36,34 +36,46 @@ jobs:
       run: |
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
 
-    - name: Install Android system image (API 30)
+    ##########################################################################
+    # ❗ FIX #1 — Install ARM system image (macOS runners are ARM)
+    ##########################################################################
+    - name: Install Android ARM system image (API 30)
       run: |
         $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "platforms;android-30" \
-            "system-images;android-30;google_apis;x86_64"
+            "system-images;android-30;google_apis;arm64-v8a"
 
+    ##########################################################################
+    # ❗ FIX #2 — Create ARM emulator
+    ##########################################################################
     - name: Create AVD
       run: |
         echo "no" | $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd \
             -n ci \
-            --abi x86_64 \
-            -k "system-images;android-30;google_apis;x86_64" \
-            --device "pixel"
+            --abi arm64-v8a \
+            -k "system-images;android-30;google_apis;arm64-v8a" \
+            --device "pixel_5"
 
+    ##########################################################################
+    # ❗ FIX #3 — Boot emulator (works on ARM now)
+    ##########################################################################
     - name: Boot emulator
       run: |
         $ANDROID_HOME/emulator/emulator \
           -avd ci \
           -no-window \
-          -gpu swiftshader_indirect &
+          -gpu swiftshader_indirect \
+          -no-boot-anim \
+          -no-audio &
 
         echo "Waiting for device..."
         $ANDROID_HOME/platform-tools/adb wait-for-device
 
         echo "Waiting for boot..."
         until [[ "$($ANDROID_HOME/platform-tools/adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]; do
-          sleep 2
+          sleep 3
+          echo "Booting..."
         done
         echo "Emulator booted!"
 
