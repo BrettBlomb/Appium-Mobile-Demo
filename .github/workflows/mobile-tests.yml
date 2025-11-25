@@ -93,11 +93,20 @@ jobs:
 
     - name: Create Android Emulator
       run: |
+        # Fix GitHub runner bug: pre-create AVD directory
+        mkdir -p ~/.android/avd/ci.avd
+        touch ~/.android/avd/ci.ini
+
         echo "no" | "$AVDMANAGER" create avd -n ci \
           -k "system-images;android-30;google_apis;x86_64" \
-          --device "pixel_5" --force
+          --device "pixel_5" --force || true
 
-        # Patch AVD config for reliability
+        # Ensure config.ini exists
+        if [ ! -f ~/.android/avd/ci.avd/config.ini ]; then
+          touch ~/.android/avd/ci.avd/config.ini
+        fi
+
+        # Patch AVD config
         echo "hw.gpu.mode=swiftshader_indirect" >> ~/.android/avd/ci.avd/config.ini
         echo "hw.gpu.enabled=yes" >> ~/.android/avd/ci.avd/config.ini
         echo "hw.ramSize=2048" >> ~/.android/avd/ci.avd/config.ini
@@ -129,7 +138,6 @@ jobs:
           sleep 5
         done
 
-        # fail if not booted
         adb shell getprop sys.boot_completed | grep -q "1" || {
           echo "❌ Emulator failed to boot!"
           exit 1
