@@ -24,7 +24,7 @@ jobs:
         appium driver install uiautomator2
         appium driver install chromium
 
-    - name: Setup Python 3.11
+    - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
@@ -34,35 +34,83 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Accept Android SDK Licenses
-      run: yes | sdkmanager --licenses
+    #######################################################################
+    #              FIND ANDROID SDK COMMAND-LINE TOOLS DYNAMICALLY
+    #######################################################################
 
-    - name: Install Android SDK Packages
+    - name: Find sdkmanager
+      id: find_sdk
       run: |
-        sdkmanager "platform-tools" \
-                   "platforms;android-30" \
-                   "system-images;android-30;default;x86_64"
+        echo "Searching for sdkmanager..."
+        SDKMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "sdkmanager" | head -n 1)
+        if [ -z "$SDKMANAGER_PATH" ]; then
+          echo "❌ sdkmanager not found"
+          find /usr/local/lib/android/sdk -type d -maxdepth 4
+          exit 1
+        fi
+        echo "sdkmanager found at: $SDKMANAGER_PATH"
+        echo "SDKMANAGER=$SDKMANAGER_PATH" >> $GITHUB_ENV
 
-    - name: Create Emulator
+    - name: Find avdmanager
+      id: find_avd
       run: |
-        echo "no" | avdmanager create avd -n ci \
+        echo "Searching for avdmanager..."
+        AVDMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "avdmanager" | head -n 1)
+        if [ -z "$AVDMANAGER_PATH" ]; then
+          echo "❌ avdmanager not found"
+          find /usr/local/lib/android/sdk -type d -maxdepth 4
+          exit 1
+        fi
+        echo "avdmanager found at: $AVDMANAGER_PATH"
+        echo "AVDMANAGER=$AVDMANAGER_PATH" >> $GITHUB_ENV
+
+    #######################################################################
+    #                     INSTALL ANDROID COMPONENTS
+    #######################################################################
+
+    - name: Accept Android SDK licenses
+      run: |
+        yes | "$SDKMANAGER" --licenses
+
+    - name: Install Android SDK packages (API 30)
+      run: |
+        "$SDKMANAGER" "platform-tools" \
+                      "platforms;android-30" \
+                      "system-images;android-30;default;x86_64"
+
+    #######################################################################
+    #                             CREATE EMULATOR
+    #######################################################################
+
+    - name: Remove old emulators
+      run: rm -rf $HOME/.android/avd/*
+
+    - name: Create Android Emulator
+      run: |
+        echo "no" | "$AVDMANAGER" create avd -n ci \
           -k "system-images;android-30;default;x86_64" \
           --device "pixel" --force
+
+    #######################################################################
+    #                            START EMULATOR
+    #######################################################################
 
     - name: Start Emulator
       run: |
         emulator -avd ci \
           -no-window \
           -no-audio \
-          -no-boot-anim \
           -no-snapshot \
+          -no-boot-anim \
           -gpu swiftshader_indirect &
 
+        echo "Waiting for device..."
         adb wait-for-device
 
-        echo "Waiting for emulator to boot..."
+        echo "Waiting for Android boot to complete..."
         adb shell 'while [[ $(getprop sys.boot_completed) != "1" ]]; do sleep 2; done'
-        echo "Emulator booted!"
+
+        echo "🎉 Emulator booted successfully!"
 
     - name: Disable animations
       run: |
@@ -70,10 +118,18 @@ jobs:
         adb shell settings put global transition_animation_scale 0
         adb shell settings put global animator_duration_scale 0
 
-    - name: Start Appium
+    #######################################################################
+    #                             START APPIUM
+    #######################################################################
+
+    - name: Start Appium Server
       run: |
         appium --base-path /wd/hub &
         sleep 10
 
-    - name: Run Appium Tests
+    #######################################################################
+    #                         RUN APPIUM TESTS
+    #######################################################################
+
+    - name: Run Mobile Tests
       run: pytest -k mobile
