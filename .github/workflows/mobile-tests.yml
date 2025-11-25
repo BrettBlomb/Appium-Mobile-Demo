@@ -1,0 +1,25 @@
+name: Mobile Tests (Base Check)
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  sanity-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Verify runner environment
+      run: |
+        echo "OS Info:"
+        uname -a
+        echo ""
+        echo "Tar location:"
+        which tar
+        echo ""
+        echo "Tar version:"
+        tar --version
