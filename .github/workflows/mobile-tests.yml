@@ -6,19 +6,18 @@ on:
   pull_request:
 
 jobs:
-  appium-mobile-tests:
-    runs-on: ubuntu-latest
+  android-tests:
+    runs-on: macos-latest   # ← CRITICAL FIX: Use macOS, not Linux
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Setup Node.js
+    - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
 
-    - name: Install Appium and Drivers
+    - name: Install Appium + Drivers
       run: |
         npm install -g appium@latest
         appium driver install uiautomator2
@@ -29,123 +28,32 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install Python dependencies
+    - name: Install python deps
       run: |
-        pip install --upgrade pip
         pip install -r requirements.txt
 
-    #######################################################################
-    #           FIND ANDROID SDK COMMAND LINE TOOLS DYNAMICALLY
-    #######################################################################
-
-    - name: Find sdkmanager
-      id: find_sdk
+    # -----------------------------------------------------
+    #    STABLE EMULATOR ON GITHUB — USES macOS RUNNER
+    # -----------------------------------------------------
+    - name: Install AVD
       run: |
-        SDKMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "sdkmanager" | head -n 1)
-        if [ -z "$SDKMANAGER_PATH" ]; then
-          echo "❌ sdkmanager not found"
-          exit 1
-        fi
-        echo "SDKMANAGER=$SDKMANAGER_PATH" >> $GITHUB_ENV
+        sudo $ANDROID_HOME/tools/bin/sdkmanager "system-images;android-30;google_apis;x86_64"
+        sudo $ANDROID_HOME/tools/bin/sdkmanager --licenses <<< "y"
+        echo "no" | $ANDROID_HOME/tools/bin/avdmanager create avd \
+            -n ci -k "system-images;android-30;google_apis;x86_64" \
+            --abi x86_64 --device "pixel"
 
-    - name: Find avdmanager
+    - name: Boot emulator
       run: |
-        AVDMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "avdmanager" | head -n 1)
-        if [ -z "$AVDMANAGER_PATH" ]; then
-          echo "❌ avdmanager not found"
-          exit 1
-        fi
-        echo "AVDMANAGER=$AVDMANAGER_PATH" >> $GITHUB_ENV
+        $ANDROID_HOME/emulator/emulator -avd ci -no-window -no-snapshot -gpu swiftshader_indirect &
 
-    #######################################################################
-    #                 ADD ANDROID TOOLS TO PATH
-    #######################################################################
+        echo "Waiting for device..."
+        $ANDROID_HOME/platform-tools/adb wait-for-device
 
-    - name: Add Android tools to PATH
-      run: |
-        echo "/usr/local/lib/android/sdk/emulator" >> $GITHUB_PATH
-        echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
-        echo "/usr/local/lib/android/sdk/cmdline-tools" >> $GITHUB_PATH
-        echo "/usr/local/lib/android/sdk/cmdline-tools/bin" >> $GITHUB_PATH
-
-    #######################################################################
-    #        INSTALL ANDROID SDK COMPONENTS (Google APIs Image)
-    #######################################################################
-
-    - name: Accept Android SDK licenses
-      run: yes | "$SDKMANAGER" --licenses
-
-    - name: Install Android SDK packages (API 30 x86_64 ONLY)
-      run: |
-        "$SDKMANAGER" "platform-tools" \
-                      "platforms;android-30" \
-                      "system-images;android-30;google_apis;x86_64"
-
-    #######################################################################
-    #             REMOVE ARM IMAGES (CRITICAL FIX #1)
-    #######################################################################
-
-    - name: Remove ARM images
-      run: |
-        rm -rf $ANDROID_HOME/system-images/android-30/*arm*
-
-    #######################################################################
-    #                         CREATE EMULATOR
-    #######################################################################
-
-    - name: Remove old emulators
-      run: rm -rf $HOME/.android/avd/*
-
-    - name: Create Android Emulator (FORCE x86_64 ABI)
-      run: |
-        mkdir -p ~/.android/avd/ci.avd
-
-        echo "no" | "$AVDMANAGER" create avd -n ci \
-          -k "system-images;android-30;google_apis;x86_64" \
-          --abi x86_64 \
-          --device "pixel_5" \
-          --force || true
-
-        CONFIG=~/.android/avd/ci.avd/config.ini
-        [ ! -f $CONFIG ] && touch $CONFIG
-
-        echo "hw.cpu.ncore=2" >> $CONFIG
-        echo "hw.gpu.mode=swiftshader_indirect" >> $CONFIG
-        echo "hw.gpu.enabled=yes" >> $CONFIG
-        echo "hw.ramSize=2048" >> $CONFIG
-        echo "skin.dynamic=yes" >> $CONFIG
-
-    #######################################################################
-    #                           START EMULATOR
-    #######################################################################
-
-    - name: Start Emulator
-      run: |
-        emulator -avd ci \
-          -gpu swiftshader_indirect \
-          -no-window \
-          -no-audio \
-          -no-snapshot \
-          -no-boot-anim &
-
-        adb wait-for-device
-
-        for i in {1..60}; do
-          if adb shell getprop sys.boot_completed | grep -q "1"; then
-            echo "🎉 Boot complete!"
-            break
-          fi
-          sleep 5
+        echo "Waiting for boot complete..."
+        until [[ "$($ANDROID_HOME/platform-tools/adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]; do
+          sleep 2
         done
-
-        adb shell getprop sys.boot_completed | grep -q "1" || {
-          echo "❌ Emulator failed to boot!"
-          exit 1
-        }
-
-    #######################################################################
-    #                        DISABLE ANIMATIONS
-    #######################################################################
 
     - name: Disable animations
       run: |
@@ -153,18 +61,10 @@ jobs:
         adb shell settings put global transition_animation_scale 0
         adb shell settings put global animator_duration_scale 0
 
-    #######################################################################
-    #                         START APPIUM SERVER
-    #######################################################################
-
-    - name: Start Appium Server
+    - name: Start Appium
       run: |
         appium --base-path /wd/hub &
         sleep 10
 
-    #######################################################################
-    #                          RUN TESTS
-    #######################################################################
-
-    - name: Run Mobile Tests
+    - name: Run tests
       run: pytest -k mobile
