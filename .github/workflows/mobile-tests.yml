@@ -35,7 +35,7 @@ jobs:
         pip install -r requirements.txt
 
     #######################################################################
-    #              FIND ANDROID SDK COMMAND-LINE TOOLS DYNAMICALLY
+    #           FIND ANDROID SDK COMMAND LINE TOOLS DYNAMICALLY
     #######################################################################
 
     - name: Find sdkmanager
@@ -45,10 +45,8 @@ jobs:
         SDKMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "sdkmanager" | head -n 1)
         if [ -z "$SDKMANAGER_PATH" ]; then
           echo "❌ sdkmanager not found"
-          find /usr/local/lib/android/sdk -type d -maxdepth 4
           exit 1
         fi
-        echo "sdkmanager found at: $SDKMANAGER_PATH"
         echo "SDKMANAGER=$SDKMANAGER_PATH" >> $GITHUB_ENV
 
     - name: Find avdmanager
@@ -58,19 +56,27 @@ jobs:
         AVDMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "avdmanager" | head -n 1)
         if [ -z "$AVDMANAGER_PATH" ]; then
           echo "❌ avdmanager not found"
-          find /usr/local/lib/android/sdk -type d -maxdepth 4
           exit 1
         fi
-        echo "avdmanager found at: $AVDMANAGER_PATH"
         echo "AVDMANAGER=$AVDMANAGER_PATH" >> $GITHUB_ENV
 
     #######################################################################
-    #                     INSTALL ANDROID COMPONENTS
+    #                 ADD ANDROID TOOLS TO PATH (KEY FIX)
+    #######################################################################
+
+    - name: Add Android tools to PATH
+      run: |
+        echo "/usr/local/lib/android/sdk/emulator" >> $GITHUB_PATH
+        echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+        echo "/usr/local/lib/android/sdk/cmdline-tools" >> $GITHUB_PATH
+        echo "/usr/local/lib/android/sdk/cmdline-tools/bin" >> $GITHUB_PATH
+
+    #######################################################################
+    #            INSTALL ANDROID SDK COMPONENTS (API 30)
     #######################################################################
 
     - name: Accept Android SDK licenses
-      run: |
-        yes | "$SDKMANAGER" --licenses
+      run: yes | "$SDKMANAGER" --licenses
 
     - name: Install Android SDK packages (API 30)
       run: |
@@ -79,7 +85,7 @@ jobs:
                       "system-images;android-30;default;x86_64"
 
     #######################################################################
-    #                             CREATE EMULATOR
+    #                         CREATE EMULATOR
     #######################################################################
 
     - name: Remove old emulators
@@ -92,25 +98,27 @@ jobs:
           --device "pixel" --force
 
     #######################################################################
-    #                            START EMULATOR
+    #                          START EMULATOR
     #######################################################################
 
     - name: Start Emulator
       run: |
         emulator -avd ci \
           -no-window \
-          -no-audio \
           -no-snapshot \
+          -no-audio \
           -no-boot-anim \
           -gpu swiftshader_indirect &
 
-        echo "Waiting for device..."
         adb wait-for-device
 
-        echo "Waiting for Android boot to complete..."
+        echo "Waiting for boot..."
         adb shell 'while [[ $(getprop sys.boot_completed) != "1" ]]; do sleep 2; done'
+        echo "Emulator booted!"
 
-        echo "🎉 Emulator booted successfully!"
+    #######################################################################
+    #                           DISABLE ANIMATIONS
+    #######################################################################
 
     - name: Disable animations
       run: |
@@ -119,7 +127,7 @@ jobs:
         adb shell settings put global animator_duration_scale 0
 
     #######################################################################
-    #                             START APPIUM
+    #                          START APPIUM
     #######################################################################
 
     - name: Start Appium Server
@@ -128,7 +136,7 @@ jobs:
         sleep 10
 
     #######################################################################
-    #                         RUN APPIUM TESTS
+    #                        RUN MOBILE TESTS
     #######################################################################
 
     - name: Run Mobile Tests
