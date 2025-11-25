@@ -47,10 +47,8 @@ jobs:
           exit 1
         fi
         echo "SDKMANAGER=$SDKMANAGER_PATH" >> $GITHUB_ENV
-        echo "sdkmanager found at $SDKMANAGER_PATH"
 
     - name: Find avdmanager
-      id: find_avd
       run: |
         AVDMANAGER_PATH=$(find /usr/local/lib/android/sdk -type f -name "avdmanager" | head -n 1)
         if [ -z "$AVDMANAGER_PATH" ]; then
@@ -58,10 +56,9 @@ jobs:
           exit 1
         fi
         echo "AVDMANAGER=$AVDMANAGER_PATH" >> $GITHUB_ENV
-        echo "avdmanager found at $AVDMANAGER_PATH"
 
     #######################################################################
-    #                 ADD ANDROID TOOLS TO PATH (CRITICAL)
+    #                 ADD ANDROID TOOLS TO PATH
     #######################################################################
 
     - name: Add Android tools to PATH
@@ -78,11 +75,19 @@ jobs:
     - name: Accept Android SDK licenses
       run: yes | "$SDKMANAGER" --licenses
 
-    - name: Install Android SDK packages (API 30)
+    - name: Install Android SDK packages (API 30 x86_64 ONLY)
       run: |
         "$SDKMANAGER" "platform-tools" \
                       "platforms;android-30" \
                       "system-images;android-30;google_apis;x86_64"
+
+    #######################################################################
+    #             REMOVE ARM IMAGES (CRITICAL FIX #1)
+    #######################################################################
+
+    - name: Remove ARM images
+      run: |
+        rm -rf $ANDROID_HOME/system-images/android-30/*arm*
 
     #######################################################################
     #                         CREATE EMULATOR
@@ -91,26 +96,24 @@ jobs:
     - name: Remove old emulators
       run: rm -rf $HOME/.android/avd/*
 
-    - name: Create Android Emulator
+    - name: Create Android Emulator (FORCE x86_64 ABI)
       run: |
-        # Fix GitHub runner bug: pre-create AVD directory
-        mkdir -p ~/.android/avd/ci.avd
-        touch ~/.android/avd/ci.ini
+        mkdir -p ~/.android/avd
 
         echo "no" | "$AVDMANAGER" create avd -n ci \
           -k "system-images;android-30;google_apis;x86_64" \
-          --device "pixel_5" --force || true
+          --abi x86_64 \
+          --device "pixel_5" \
+          --force || true
 
-        # Ensure config.ini exists
-        if [ ! -f ~/.android/avd/ci.avd/config.ini ]; then
-          touch ~/.android/avd/ci.avd/config.ini
-        fi
+        CONFIG=~/.android/avd/ci.avd/config.ini
+        [ ! -f $CONFIG ] && touch $CONFIG
 
-        # Patch AVD config
-        echo "hw.gpu.mode=swiftshader_indirect" >> ~/.android/avd/ci.avd/config.ini
-        echo "hw.gpu.enabled=yes" >> ~/.android/avd/ci.avd/config.ini
-        echo "hw.ramSize=2048" >> ~/.android/avd/ci.avd/config.ini
-        echo "skin.dynamic=yes" >> ~/.android/avd/ci.avd/config.ini
+        echo "hw.cpu.ncore=2" >> $CONFIG
+        echo "hw.gpu.mode=swiftshader_indirect" >> $CONFIG
+        echo "hw.gpu.enabled=yes" >> $CONFIG
+        echo "hw.ramSize=2048" >> $CONFIG
+        echo "skin.dynamic=yes" >> $CONFIG
 
     #######################################################################
     #                           START EMULATOR
@@ -119,22 +122,19 @@ jobs:
     - name: Start Emulator
       run: |
         emulator -avd ci \
+          -gpu swiftshader_indirect \
           -no-window \
           -no-audio \
           -no-snapshot \
-          -no-boot-anim \
-          -gpu swiftshader_indirect &
+          -no-boot-anim &
 
-        echo "Waiting for device..."
         adb wait-for-device
 
-        echo "Waiting for boot..."
         for i in {1..60}; do
           if adb shell getprop sys.boot_completed | grep -q "1"; then
             echo "🎉 Boot complete!"
             break
           fi
-          echo "⏳ Booting... ($i/60)"
           sleep 5
         done
 
