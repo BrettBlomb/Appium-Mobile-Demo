@@ -7,7 +7,7 @@ on:
 
 jobs:
   android-tests:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -32,63 +32,64 @@ jobs:
       run: |
         pip install -r requirements.txt
 
-    - name: Accept Android SDK Licenses
+    - name: Install Android SDK
       run: |
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+        sudo apt-get update
+        sudo apt-get install -y wget unzip
 
-    ##########################################################################
-    # ❗ FIX #1 — Install ARM system image (macOS runners are ARM)
-    ##########################################################################
-    - name: Install Android ARM system image (API 30)
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdtools.zip
+        mkdir -p $HOME/android-sdk
+        unzip cmdtools.zip -d $HOME/android-sdk/cmdline-tools
+        mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+
+        echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+        echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+        echo "$HOME/android-sdk/emulator" >> $GITHUB_PATH
+
+    - name: Accept Android licenses
+      run: yes | sdkmanager --licenses
+
+    - name: Install Android System Image (x86_64)
       run: |
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" \
-            "platforms;android-30" \
-            "system-images;android-30;google_apis;arm64-v8a"
+        sdkmanager "platform-tools" \
+                   "platforms;android-30" \
+                   "system-images;android-30;google_apis;x86_64" \
+                   "emulator"
 
-    ##########################################################################
-    # ❗ FIX #2 — Create ARM emulator
-    ##########################################################################
     - name: Create AVD
       run: |
-        echo "no" | $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd \
-            -n ci \
-            --abi arm64-v8a \
-            -k "system-images;android-30;google_apis;arm64-v8a" \
-            --device "pixel_5"
+        echo "no" | avdmanager create avd \
+          -n ci \
+          --abi x86_64 \
+          -k "system-images;android-30;google_apis;x86_64" \
+          --device "pixel"
 
-    ##########################################################################
-    # ❗ FIX #3 — Boot emulator (works on ARM now)
-    ##########################################################################
     - name: Boot emulator
+      timeout-minutes: 10
       run: |
-        $ANDROID_HOME/emulator/emulator \
-          -avd ci \
-          -no-window \
-          -gpu swiftshader_indirect \
-          -no-boot-anim \
-          -no-audio &
+        emulator -avd ci -no-window -no-audio -gpu swiftshader_indirect &
 
         echo "Waiting for device..."
-        $ANDROID_HOME/platform-tools/adb wait-for-device
+        adb wait-for-device
 
-        echo "Waiting for boot..."
-        until [[ "$($ANDROID_HOME/platform-tools/adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]; do
-          sleep 3
+        until adb shell getprop sys.boot_completed | grep -m 1 "1"; do
           echo "Booting..."
+          sleep 5
         done
+
         echo "Emulator booted!"
 
     - name: Disable animations
       run: |
-        $ANDROID_HOME/platform-tools/adb shell settings put global window_animation_scale 0
-        $ANDROID_HOME/platform-tools/adb shell settings put global transition_animation_scale 0
-        $ANDROID_HOME/platform-tools/adb shell settings put global animator_duration_scale 0
+        adb shell settings put global window_animation_scale 0
+        adb shell settings put global transition_animation_scale 0
+        adb shell settings put global animator_duration_scale 0
 
     - name: Start Appium
       run: |
         appium --base-path /wd/hub &
         sleep 10
 
-    - name: Run tests
+    - name: Run Appium tests
       run: pytest -k mobile
